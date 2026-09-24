@@ -27,6 +27,7 @@ button:disabled { opacity: 0.45; }
 .pager { margin: 1rem 0; }
 audio { width: 100%; }
 .error { color: #a33; }
+.success { color: #2a7a4a; }
 
 @media (max-width: 720px) {
   header, .grid { display: block; }
