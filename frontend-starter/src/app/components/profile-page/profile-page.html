@@ -10,8 +10,14 @@
       Membre depuis {{ user.createdAt.slice(0, 10) }}
     </p>
     <form [formGroup]="form" (ngSubmit)="save()">
-      <label>Nouveau nom<input formControlName="name" /></label>
-      <button type="submit">Enregistrer</button>
+      <label>
+        Nouveau nom
+        <input formControlName="name" />
+      </label>
+      @if (form.controls.name.invalid && form.controls.name.touched) {
+        <p class="error">Le nom est obligatoire.</p>
+      }
+      <button type="submit" [disabled]="form.invalid">Enregistrer</button>
     </form>
     @if (saveMessage()) {
       <p class="success">{{ saveMessage() }}</p>
