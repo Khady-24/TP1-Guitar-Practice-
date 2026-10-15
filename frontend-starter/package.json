@@ -23,5 +23,12 @@
         "@angular/compiler-cli": "^22.1.0",
         "typescript": "~6.0.0",
         "vitest": "^4.0.8"
+    },
+    "allowScripts": {
+        "@parcel/watcher@2.6.0": true,
+        "esbuild@0.28.2": true,
+        "lmdb@3.5.6": true,
+        "msgpackr-extract@3.0.4": true,
+        "fsevents@2.3.3": true
     }
 }
