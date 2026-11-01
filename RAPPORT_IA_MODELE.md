@@ -21,11 +21,56 @@ Un **Signal** Angular (`signal<T>()`) est une valeur réactive en mémoire : qua
 - **Vérifications réalisées :** relecture des réponses, comparaison avec les fichiers réels du projet (chemins et numéros de ligne cités vérifiables directement dans l'éditeur).
 - **Erreurs ou propositions rejetées :** aucune — mission de lecture seule, pas de code produit.
 - **Fichiers effectivement modifiés :** aucun.
-- **Preuve de fonctionnement :** non applicable (pas de code) ; le schéma du flux est repris dans l'historique de conversation avec l'assistant.
+- **Preuve de fonctionnement :** non applicable (pas de code) ; schéma annoté reproduit ci-dessous.
 - **Ce que je sais maintenant expliquer sans l'agent :**
   - pourquoi `AppComponent` ne contient que le `<router-outlet />` et comment `provideRouter`/`provideHttpClient` sont déclarés dans `main.ts` (approche standalone, sans `NgModule`) ;
   - comment `authGuard` bloque la navigation côté client, indépendamment de ce que fait le backend ;
   - comment `authInterceptor` ajoute `Authorization: Bearer <token>` uniquement quand un token existe, et pourquoi `/auth/login` n'a jamais cet en-tête.
+
+### Schéma annoté — flux du clic sur « Se connecter »
+
+```text
+[login-page.html]  (ngSubmit)="submit()"
+        │  l'utilisateur clique, le formulaire contient {email, password}
+        ▼
+[login-page.ts] submit()
+        │  1. form.getRawValue() → {email, password}
+        │  2. appelle auth.login(email, password)   ← le composant n'appelle jamais HttpClient directement
+        ▼
+[auth.service.ts] login()
+        │  this.http.post<AuthResponse>('/api/auth/login', {email, password})
+        ▼
+[auth.interceptor.ts] authInterceptor
+        │  lit AuthService.token() → null (pas encore connecté)
+        │  → requête transmise SANS modification (pas d'en-tête Authorization,
+        │    cohérent avec /auth/login qui est une route PUBLIQUE)
+        ▼
+   HttpClient → proxy (proxy.conf.json) → API Express
+        │  POST http://localhost:3000/api/auth/login
+        ▼
+[Backend Express] valide les identifiants, interroge MongoDB via Mongoose,
+        │  signe un JWT
+        ▼
+   200 { token, user }  ──────────────► retour vers Angular
+        ▼
+[auth.service.ts] .pipe(tap(storeAuthentication))
+        │  - localStorage.setItem('gpc_token', token)
+        │  - token.set(token)          → signal mis à jour
+        │  - currentUser.set(user)     → signal mis à jour
+        ▼
+[login-page.ts] subscribe.next()
+        │  router.navigateByUrl('/tracks')
+        ▼
+[routes.ts] la route 'tracks' a canActivate: [authGuard]
+        │  authGuard lit token() → maintenant défini → navigation autorisée
+        ▼
+[tracks-page] s'affiche ; tout appel HttpClient suivant (ex. GET /api/tracks)
+        repasse par authInterceptor, qui CETTE FOIS attache
+        Authorization: Bearer <token>, satisfaisant la route protégée.
+```
+
+**Routes publiques (`API_CONTRACT.md`)** : `GET /health`, `POST /auth/register`, `POST /auth/login`.
+**Routes protégées** (nécessitent `Authorization: Bearer <token>`) : `GET/PUT /users/me`, `GET/POST /tracks`, `GET /tracks/:id/audio`, `DELETE /tracks/:id` (bonus).
 
 ## Mission 1 — Inscription, Connexion et Profil
 
@@ -44,7 +89,7 @@ Un **Signal** Angular (`signal<T>()`) est une valeur réactive en mémoire : qua
 - **Vérifications réalisées :**
   - Étape 6 testée manuellement par moi : accès direct à `/profile` déconnectée → redirection `/login` ✅ ; token invalide dans `localStorage` → déconnexion automatique et redirection `/login` ✅.
   - Étape 7 :
-    - Connexion réussie : vérifiée (statut `200`, réponse `{token, user}`, aucun en-tête `Authorization` sur la requête). Capture volontairement non conservée dans le dépôt car elle affichait le JWT complet en clair — à éviter par principe de sécurité (voir consigne du sujet).
+    - Connexion réussie (`POST /api/auth/login`, `200 OK`, aucun en-tête `Authorization` dans la requête — cohérent avec une route publique) : ![Connexion réussie](docs/screenshots/login-200-succes.png)
     - Connexion refusée (mauvais mot de passe, `401 {"message":"Identifiants incorrects"}`) : ![Connexion refusée](docs/screenshots/login-401-refuse.png)
     - `GET /api/users/me` (`200`, authentifié via l'en-tête `Authorization: Bearer ...` confirmé visuellement dans l'onglet Headers) : ![Réponse /users/me](docs/screenshots/users-me-200.png)
   - Chaque étape de code a été vérifiée par compilation (`tsc --noEmit`, `ng build`) avant d'être committée.
