@@ -4,12 +4,12 @@
     <small>Le cloud qui manque à votre ampli</small>
   </div>
   <nav aria-label="Navigation principale">
-    <a routerLink="/tracks">Backing tracks</a>
+    <a routerLink="/tracks" routerLinkActive="active">Backing tracks</a>
     @if (auth.token()) {
-      <a routerLink="/profile">Profil</a>
+      <a routerLink="/profile" routerLinkActive="active">Profil</a>
       <button type="button" (click)="logout()">Déconnexion</button>
     } @else {
-      <a routerLink="/login">Connexion</a>
+      <a routerLink="/login" routerLinkActive="active">Connexion</a>
     }
   </nav>
 </header>
