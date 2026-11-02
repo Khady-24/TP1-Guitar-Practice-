@@ -8,17 +8,20 @@
   <div class="grid">
     <article class="card">
       <h2>Importer</h2>
-      <label>Titre<input [formControl]="title" /></label>
+      <label>Titre<input [formControl]="title" [attr.disabled]="uploading() ? true : null" /></label>
       <label>
         Fichier audio
-        <input type="file" accept="audio/*" (change)="choose($event)" />
+        <input type="file" accept="audio/*" (change)="choose($event)" [disabled]="uploading()" />
       </label>
       @if (fileError()) {
         <p class="error">{{ fileError() }}</p>
       }
       <button type="button" (click)="upload()" [disabled]="!file || uploading()">
-        {{ uploading() ? 'Envoi…' : 'Envoyer' }}
+        {{ uploading() ? 'Envoi… ' + uploadProgress() + ' %' : 'Envoyer' }}
       </button>
+      @if (uploading()) {
+        <div class="progress-track"><div class="progress-fill" [style.width.%]="uploadProgress()"></div></div>
+      }
       @if (uploadSuccess()) {
         <p class="success">{{ uploadSuccess() }}</p>
       }
@@ -48,9 +51,20 @@
               <small>{{ track.originalName }}</small>
               <small>{{ formatName(track.mimeType) }} · {{ formatSize(track.size) }} · {{ track.createdAt | date: 'dd/MM/yyyy' }}</small>
             </div>
-            <button type="button" (click)="play(track)" [attr.aria-label]="'Lire ' + track.title">
-              {{ playingTrackId() === track.id ? '🎵' : '▶' }}
-            </button>
+            <div class="track-actions">
+              <button type="button" (click)="play(track)" [attr.aria-label]="'Lire ' + track.title">
+                {{ playingTrackId() === track.id ? '🎵' : '▶' }}
+              </button>
+              <button
+                type="button"
+                class="danger"
+                (click)="remove(track)"
+                [disabled]="deletingId() === track.id"
+                [attr.aria-label]="'Supprimer ' + track.title"
+              >
+                {{ deletingId() === track.id ? '…' : '🗑' }}
+              </button>
+            </div>
           </article>
         } @empty {
           @if (!loading()) {
