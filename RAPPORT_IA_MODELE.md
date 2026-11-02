@@ -1,4 +1,4 @@
-# Rapport d'usage de l'IA - TP1
+# Rapport d'usage de l'IA 
 
 Pour chaque mission, détailler et fournir des explications concernant : objectif; prompt principal; plan proposé par l'agent; vérifications réalisées par le binôme; erreurs ou propositions rejetées; fichiers effectivement modifiés; preuve de fonctionnement; ce que chaque membre sait maintenant expliquer sans l'agent.
 
@@ -120,10 +120,10 @@ Un **Signal** Angular (`signal<T>()`) est une valeur réactive en mémoire : qua
 - **Objectif :** vérifier/compléter `TrackService.list(page, limit)`, représenter `tracks`/`page`/`pages`/`loading`/erreur avec des Signals, afficher avec `@for`/`@empty`/`@if`, pagination serveur (pas de découpage local).
 - **Prompt principal :** demande de réaliser TP2 « de A à Z », en repartant de l'état du starter.
 - **Plan proposé par l'agent :** analyse du starter existant (`TrackService.list` envoyait déjà `page`/`limit`, signals `tracks`/`page`/`pages`/`loading` déjà présents) ; seul manquait un signal d'erreur visible pour l'utilisateur. Ajout de `listError` dans `TracksPageComponent`, affiché dans le template.
-- **Vérifications réalisées :** compilation (`tsc --noEmit`, `ng build`) ; vérification manuelle à faire : changer de page et confirmer dans Network que chaque clic déclenche un nouveau `GET /api/tracks?page=...&limit=...` (voir section Checkpoint ci-dessous).
+- **Vérifications réalisées :** compilation (`tsc --noEmit`, `ng build`) ; testé manuellement par moi dans DevTools → Network : chaque clic sur "Préc."/"Suiv." déclenche bien un nouveau `GET /api/tracks?page=X&limit=5` avec `page` qui change (`tracks?page=1&limit=5` puis `tracks?page=2&limit=5` observés).
 - **Erreurs ou propositions rejetées :** aucune — le mécanisme de pagination serveur du starter était déjà conforme au contrat, pas besoin de le réécrire.
 - **Fichiers effectivement modifiés :** `frontend-starter/src/app/components/tracks-page/tracks-page.ts`.
-- **Preuve de fonctionnement :** build + type-check propres ; capture Network à ajouter par l'étudiante (voir Checkpoint TD2).
+- **Preuve de fonctionnement :** build + type-check propres ; pagination confirmée dans Network (voir ci-dessus).
 - **Ce que je sais maintenant expliquer sans l'agent :**
   - pourquoi on ne doit jamais charger toutes les pistes puis découper côté client (ça casserait la pagination serveur et chargerait inutilement des données) ;
   - comment un signal d'erreur distinct du signal de chargement permet d'afficher les deux états indépendamment.
@@ -137,13 +137,18 @@ Un **Signal** Angular (`signal<T>()`) est une valeur réactive en mémoire : qua
   2. États `uploading`/`uploadSuccess`/`uploadError` : bouton désactivé et texte "Envoi…" pendant la requête (empêche la double soumission), message de succès ou d'erreur serveur affiché après.
   3. Transformation de la liste en cards (`track-card`) affichant titre, nom original, format (déduit du `mimeType`), taille lisible (Ko/Mo) et date (`DatePipe`).
   4. Lecture : `playingTrackId` indique visuellement la piste en cours (icône + bordure), `audioError` affiche un message si la lecture échoue, `ngOnDestroy` révoque l'`ObjectURL` final à la destruction du composant (en plus de la révocation de l'URL précédente à chaque nouvelle lecture, déjà présente).
-- **Vérifications réalisées :** compilation (`tsc --noEmit`, `ng build`) après chaque changement. Vérifications manuelles Network à faire par l'étudiante (voir Checkpoint TD2).
+- **Vérifications réalisées (manuelles, DevTools Network) :**
+  - Upload : `POST /api/tracks`, `201 Created`, en-tête `Authorization: Bearer ...` présent dans la requête.
+  - Lecture authentifiée : `GET /api/tracks/:id/audio`, `304`/`200`, en-tête `Authorization: Bearer ...` confirmé dans les Request Headers : ![Lecture authentifiée](docs/screenshots/audio-authorization.png)
+  - Rejet d'un format non accepté (`.flac`, reconnu "audio/*" par le sélecteur mais hors de notre liste `mp3/wav/ogg/m4a`) : message affiché **avant** tout appel réseau, aucune requête `POST /api/tracks` déclenchée : ![Format refusé](docs/screenshots/upload-format-refuse.png)
+  - Rejet d'un fichier trop volumineux (29,9 Mo, limite 25 Mo) : même comportement, message "Fichier trop volumineux" affiché, bouton désactivé, aucun appel réseau.
+  - Nuance par rapport au Checkpoint du sujet (qui évoque un rejet "400 affiché pour un fichier invalide") : ici la validation frontend empêche l'envoi de la requête, donc aucun `400` n'apparaît dans Network pour ces deux cas précis — c'est un comportement plus strict que demandé (on économise l'aller-retour réseau), mais la validation backend (déjà en place, non modifiée) resterait le filet de sécurité si la validation frontend était contournée.
 - **Erreurs ou propositions rejetées :** aucune proposition rejetée sur cette mission.
 - **Fichiers effectivement modifiés :**
   - `frontend-starter/src/app/components/tracks-page/tracks-page.ts`
   - `frontend-starter/src/app/components/tracks-page/tracks-page.html`
   - `frontend-starter/src/app/components/tracks-page/tracks-page.css`
-- **Preuve de fonctionnement :** build + type-check propres ; capture Network à ajouter par l'étudiante (upload multipart, flux audio).
+- **Preuve de fonctionnement :** build + type-check propres ; captures Network ci-dessus (upload `201`, lecture authentifiée, rejets format/taille).
 
 ### Flux analysé : upload → stockage → lecture
 
