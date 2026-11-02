@@ -114,3 +114,83 @@ Un **Signal** Angular (`signal<T>()`) est une valeur réactive en mémoire : qua
   - comment afficher une erreur de validation par champ (`control.invalid && control.touched`) sans toucher aux validateurs existants ;
   - pourquoi l'intercepteur ne redirige vers `/login` sur un `401` que si un token avait été envoyé, pour ne pas perturber l'écran de connexion lui-même ;
   - comment diagnostiquer un problème d'environnement npm (ports, `node_modules` corrompu, scripts d'installation bloqués) plutôt que de l'attribuer au code applicatif.
+
+## Mission 2 — Bibliothèque paginée
+
+- **Objectif :** vérifier/compléter `TrackService.list(page, limit)`, représenter `tracks`/`page`/`pages`/`loading`/erreur avec des Signals, afficher avec `@for`/`@empty`/`@if`, pagination serveur (pas de découpage local).
+- **Prompt principal :** demande de réaliser TP2 « de A à Z », en repartant de l'état du starter.
+- **Plan proposé par l'agent :** analyse du starter existant (`TrackService.list` envoyait déjà `page`/`limit`, signals `tracks`/`page`/`pages`/`loading` déjà présents) ; seul manquait un signal d'erreur visible pour l'utilisateur. Ajout de `listError` dans `TracksPageComponent`, affiché dans le template.
+- **Vérifications réalisées :** compilation (`tsc --noEmit`, `ng build`) ; vérification manuelle à faire : changer de page et confirmer dans Network que chaque clic déclenche un nouveau `GET /api/tracks?page=...&limit=...` (voir section Checkpoint ci-dessous).
+- **Erreurs ou propositions rejetées :** aucune — le mécanisme de pagination serveur du starter était déjà conforme au contrat, pas besoin de le réécrire.
+- **Fichiers effectivement modifiés :** `frontend-starter/src/app/components/tracks-page/tracks-page.ts`.
+- **Preuve de fonctionnement :** build + type-check propres ; capture Network à ajouter par l'étudiante (voir Checkpoint TD2).
+- **Ce que je sais maintenant expliquer sans l'agent :**
+  - pourquoi on ne doit jamais charger toutes les pistes puis découper côté client (ça casserait la pagination serveur et chargerait inutilement des données) ;
+  - comment un signal d'erreur distinct du signal de chargement permet d'afficher les deux états indépendamment.
+
+## Mission 3 — Upload et lecture audio
+
+- **Objectif :** analyser puis compléter le mécanisme d'upload/lecture déjà fourni (validation frontend, états UI, cards présentables, gestion fine de la lecture).
+- **Prompt principal :** idem, réalisation de TP2 de bout en bout.
+- **Plan proposé par l'agent :**
+  1. Validation frontend du fichier (extension parmi `mp3/wav/ogg/m4a` + taille ≤ 25 Mo) avant tout appel HTTP, avec message d'erreur clair (`fileError`).
+  2. États `uploading`/`uploadSuccess`/`uploadError` : bouton désactivé et texte "Envoi…" pendant la requête (empêche la double soumission), message de succès ou d'erreur serveur affiché après.
+  3. Transformation de la liste en cards (`track-card`) affichant titre, nom original, format (déduit du `mimeType`), taille lisible (Ko/Mo) et date (`DatePipe`).
+  4. Lecture : `playingTrackId` indique visuellement la piste en cours (icône + bordure), `audioError` affiche un message si la lecture échoue, `ngOnDestroy` révoque l'`ObjectURL` final à la destruction du composant (en plus de la révocation de l'URL précédente à chaque nouvelle lecture, déjà présente).
+- **Vérifications réalisées :** compilation (`tsc --noEmit`, `ng build`) après chaque changement. Vérifications manuelles Network à faire par l'étudiante (voir Checkpoint TD2).
+- **Erreurs ou propositions rejetées :** aucune proposition rejetée sur cette mission.
+- **Fichiers effectivement modifiés :**
+  - `frontend-starter/src/app/components/tracks-page/tracks-page.ts`
+  - `frontend-starter/src/app/components/tracks-page/tracks-page.html`
+  - `frontend-starter/src/app/components/tracks-page/tracks-page.css`
+- **Preuve de fonctionnement :** build + type-check propres ; capture Network à ajouter par l'étudiante (upload multipart, flux audio).
+
+### Flux analysé : upload → stockage → lecture
+
+```text
+UPLOAD
+[tracks-page.html] (change)="choose($event)"  → fichier choisi, validé côté front (extension + taille)
+        ▼
+[tracks-page.ts] upload()
+        │ construit via TrackService.upload(file, title)
+        ▼
+[track.service.ts] upload()
+        │ new FormData() ; append('audio', file) ; append('title', title)
+        │ this.http.post<Track>('/api/tracks', formData)
+        ▼
+[auth.interceptor.ts] attache Authorization: Bearer <token> (route protégée)
+        ▼
+POST /api/tracks (multipart/form-data) → backend Express/Multer
+        │ valide champ 'audio', format, taille (25 Mo max), stocke le fichier sur disque,
+        │ enregistre les métadonnées dans MongoDB
+        ▼
+201 Track { id, title, originalName, mimeType, size, createdAt }
+
+LECTURE
+[tracks-page.html] (click)="play(track)"
+        ▼
+[tracks-page.ts] play() → TrackService.audio(track.id)
+        ▼
+[track.service.ts] audio() → this.http.get(`/api/tracks/${id}/audio`, { responseType: 'blob' })
+        ▼
+[auth.interceptor.ts] attache Authorization: Bearer <token>
+        ▼
+GET /api/tracks/:id/audio → backend vérifie le JWT ET que la piste appartient à l'utilisateur,
+        │ renvoie le flux audio
+        ▼
+[tracks-page.ts] reçoit un Blob → URL.createObjectURL(blob) → affecté à <audio [src]>
+        │ l'URL précédente est révoquée (URL.revokeObjectURL) avant d'en créer une nouvelle,
+        │ et l'URL finale est révoquée dans ngOnDestroy()
+```
+
+**Pourquoi une URL mise directement dans `src` ne reçoit pas le JWT :** l'attribut `src` d'une balise `<audio>`/`<img>` déclenche une requête HTTP native du navigateur, qui ne passe jamais par le pipeline `HttpClient` d'Angular — donc jamais par `authInterceptor`. C'est pour ça que la lecture passe par `TrackService.audio()` (un vrai appel `HttpClient` avec `responseType: 'blob'`, qui reçoit bien l'en-tête), puis le `Blob` reçu est transformé en `ObjectURL` locale (`blob:http://localhost:4200/...`) qui, elle, peut être mise dans `src` sans requête réseau supplémentaire.
+
+**Pourquoi la validation frontend ne remplace jamais la validation backend :** la validation frontend n'est qu'un confort UX (retour immédiat, pas d'attente réseau pour un fichier évidemment invalide) ; elle est entièrement contournable par un utilisateur malveillant (appel direct à l'API avec `curl`/Postman, extension de fichier trompeuse). Seule la validation côté backend, qui s'exécute dans un environnement non contrôlé par le client, constitue une garantie de sécurité réelle.
+
+### Réponses aux questions buffering/streaming
+
+- **Le backend envoie-t-il le fichier entier en mémoire, ou progressivement depuis le disque ?** Avec Express, un flux de fichier est normalement lu et envoyé en streaming depuis le disque (ex. `fs.createReadStream` piped vers la réponse HTTP), sans charger tout le fichier en mémoire d'un coup — à vérifier dans le handler backend de `/tracks/:id/audio`.
+- **À quel moment le composant reçoit-il le fichier avec `responseType: 'blob'` ?** `HttpClient` attend que **toute** la réponse soit reçue côté navigateur avant de résoudre l'observable avec le `Blob` complet — contrairement au streaming progressif, ici le composant ne reçoit rien tant que le téléchargement entier n'est pas terminé.
+- **Avec 100 morceaux dans la bibliothèque, sont-ils tous chargés en mémoire dès l'affichage de la liste ?** Non : le code actuel n'appelle `TrackService.audio()` que lors d'un clic sur "▶" (`play(track)`). Le `GET /api/tracks` qui alimente la liste ne renvoie que des métadonnées (titre, taille, date...), jamais les octets audio. Donc seule la piste activement choisie est téléchargée.
+- **Différence avec 100 éléments `<audio>` utilisant directement une URL HTTP ?** Si chaque `<audio>` avait un `src` HTTP direct, le navigateur pourrait précharger les métadonnées (voire le contenu, selon l'attribut `preload`) de chacun dès le rendu de la page, multipliant les requêtes et la consommation mémoire/réseau — sans compter qu'aucune ne recevrait le JWT (cf. ci-dessus), donc aucune ne fonctionnerait avec ce backend protégé.
+- **Pourquoi faut-il révoquer l'URL créée par `URL.createObjectURL` ?** Cette URL retient en mémoire une référence au `Blob` tant qu'elle n'est pas explicitement libérée avec `URL.revokeObjectURL()` — sans ça, chaque nouvelle lecture accumulerait un `Blob` orphelin en mémoire (fuite mémoire), d'où la révocation de l'ancienne URL à chaque nouvelle lecture et de la dernière URL dans `ngOnDestroy()`.
