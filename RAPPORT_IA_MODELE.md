@@ -199,3 +199,69 @@ GET /api/tracks/:id/audio → backend vérifie le JWT ET que la piste appartient
 - **Avec 100 morceaux dans la bibliothèque, sont-ils tous chargés en mémoire dès l'affichage de la liste ?** Non : le code actuel n'appelle `TrackService.audio()` que lors d'un clic sur "▶" (`play(track)`). Le `GET /api/tracks` qui alimente la liste ne renvoie que des métadonnées (titre, taille, date...), jamais les octets audio. Donc seule la piste activement choisie est téléchargée.
 - **Différence avec 100 éléments `<audio>` utilisant directement une URL HTTP ?** Si chaque `<audio>` avait un `src` HTTP direct, le navigateur pourrait précharger les métadonnées (voire le contenu, selon l'attribut `preload`) de chacun dès le rendu de la page, multipliant les requêtes et la consommation mémoire/réseau — sans compter qu'aucune ne recevrait le JWT (cf. ci-dessus), donc aucune ne fonctionnerait avec ce backend protégé.
 - **Pourquoi faut-il révoquer l'URL créée par `URL.createObjectURL` ?** Cette URL retient en mémoire une référence au `Blob` tant qu'elle n'est pas explicitement libérée avec `URL.revokeObjectURL()` — sans ça, chaque nouvelle lecture accumulerait un `Blob` orphelin en mémoire (fuite mémoire), d'où la révocation de l'ancienne URL à chaque nouvelle lecture et de la dernière URL dans `ngOnDestroy()`.
+
+## Mission 5 — Suppression d'une piste
+
+- **Objectif :** ajouter une action « Supprimer » par piste avec confirmation, anti double-clic, retour visuel (snackbar), rafraîchissement de la liste, et gestion du cas d'une piste déjà supprimée ou n'appartenant pas à l'utilisateur.
+- **Prompt principal :** réalisation de TP3 de A à Z, en gardant le pattern établi pour TD1/TD2 (code → rapport → vérifications manuelles → tag).
+- **Plan proposé par l'agent :**
+  1. `TrackService.delete(id)` → `DELETE /api/tracks/:id`.
+  2. Installation d'`@angular/material` + `@angular/cdk` (absents du starter) pour utiliser le vrai composant `MatSnackBar` demandé par le sujet, plutôt qu'un toast fait maison.
+  3. `TracksPageComponent.remove(track)` : confirmation native (`confirm()`), signal `deletingId` pour désactiver le bouton de la piste concernée pendant la requête (anti double-clic), `snackBar.open(...)` pour le succès/l'échec, `load()` pour rafraîchir après succès.
+  4. Cas particulier `404` (piste déjà supprimée, par ex. depuis un autre onglet) : message dédié + rafraîchissement quand même, au lieu d'une erreur générique.
+- **Vérifications réalisées :** compilation (`tsc --noEmit`, `ng build`) ; vérification manuelle Network à faire par l'étudiante (voir Checkpoint TD3 ci-dessous).
+- **Erreurs ou propositions rejetées :** aucune proposition rejetée, mais installation nécessaire d'`@angular/material`/`@angular/cdk` (absents du starter) — vérifié que les versions `22.x` sont compatibles avec Angular `22.1.0` déjà utilisé, pas de conflit de peer dependencies.
+- **Fichiers effectivement modifiés :**
+  - `frontend-starter/src/app/shared/services/track.service.ts`
+  - `frontend-starter/src/app/components/tracks-page/tracks-page.ts` / `.html` / `.css`
+  - `frontend-starter/package.json`, `frontend-starter/package-lock.json` (ajout Material/CDK)
+  - `frontend-starter/angular.json` (ajout du thème Material prebuilt dans les styles globaux)
+- **Preuve de fonctionnement :** build + type-check propres ; capture Network à ajouter par l'étudiante (requête `DELETE` après confirmation).
+- **Ce que je sais maintenant expliquer sans l'agent :**
+  - pourquoi le composant ne doit jamais appeler `HttpClient` directement pour supprimer une piste, mais toujours passer par `TrackService` (séparation UI/accès réseau, cohérence avec le reste de l'app) ;
+  - pourquoi le guard Angular et l'interface ne suffisent **jamais** à sécuriser une suppression : un guard ne fait que bloquer la *navigation* côté client, et l'UI peut être contournée par n'importe quel outil (DevTools, `curl`, extension navigateur). Seul le backend, qui vérifie le JWT **et** que `track.ownerId === req.user.id` avant de supprimer, constitue une protection réelle — un attaquant pourrait très bien appeler `DELETE /api/tracks/:id` directement sans jamais passer par l'interface Angular.
+
+## Mission 6 — Progression de l'upload
+
+- **Objectif :** afficher la progression de l'upload (pourcentage), distinguer absence d'upload / upload en cours / réussite / échec, désactiver les contrôles pendant l'envoi.
+- **Prompt principal :** idem.
+- **Plan proposé par l'agent :**
+  1. `TrackService.upload()` modifié pour passer `{ reportProgress: true, observe: 'events' }` à `HttpClient.post`, ce qui change le type de retour d'un `Observable<Track>` simple vers un `Observable<HttpEvent<Track>>` (flux d'événements intermédiaires, pas juste la réponse finale).
+  2. Dans `TracksPageComponent.upload()`, un `switch` implicite sur `event.type` : `HttpEventType.UploadProgress` met à jour le signal `uploadProgress` (pourcentage calculé depuis `event.loaded`/`event.total`), `HttpEventType.Response` déclenche le succès (équivalent de l'ancien comportement).
+  3. Pendant `uploading()` : champ titre et sélecteur de fichier désactivés (`[disabled]`), bouton d'envoi désactivé avec le pourcentage affiché dedans, barre de progression visuelle (`.progress-fill` dont la largeur suit le signal).
+- **Vérifications réalisées :** compilation (`tsc --noEmit`, `ng build`) ; vérification manuelle Network à faire par l'étudiante (événements de progression visibles dans l'onglet Timing/Network pour un fichier assez gros).
+- **Erreurs ou propositions rejetées :** aucune.
+- **Fichiers effectivement modifiés :** `frontend-starter/src/app/shared/services/track.service.ts`, `frontend-starter/src/app/components/tracks-page/tracks-page.ts` / `.html` / `.css`.
+- **Preuve de fonctionnement :** build + type-check propres ; démonstration visuelle (barre de progression) à confirmer par l'étudiante avec un fichier assez volumineux pour voir la progression (les petits fichiers de test synthétiques s'envoient quasi instantanément).
+- **Ce que je sais maintenant expliquer sans l'agent :**
+  - pourquoi un upload avec progression ne se traite pas comme une requête HTTP classique : par défaut, `HttpClient` résout l'observable uniquement à la réception de la réponse finale (un seul événement). Avec `observe: 'events'`, on reçoit un **flux** d'événements intermédiaires (dont `UploadProgress`, émis plusieurs fois pendant l'envoi des octets), qu'il faut filtrer soi-même par `event.type` pour distinguer la progression de la réponse finale — la souscription ne se termine qu'au dernier événement.
+
+## Mission 7 — Tests automatisés
+
+- **Objectif :** ajouter au moins 3 tests frontend ciblés (URL, méthode, paramètres, headers, résultats simulés), sans dépendre d'un backend ni de MongoDB.
+- **Prompt principal :** idem.
+- **Plan proposé par l'agent :** 4 fichiers de tests, 8 tests au total, utilisant `TestBed` + `HttpTestingController` (aucun vrai appel réseau, tout est intercepté et simulé via `req.flush(...)`) :
+  1. `auth.service.spec.ts` — `login()` envoie bien un `POST /api/auth/login` avec `{email, password}` et met à jour le signal `token` après une réponse simulée ; `logout()` réinitialise `token`/`currentUser`.
+  2. `track.service.spec.ts` — `list()` transmet bien `page`/`limit` en paramètres de requête ; `delete()` envoie bien une requête `DELETE` vers `/api/tracks/:id`.
+  3. `auth.interceptor.spec.ts` — l'intercepteur ajoute `Authorization: Bearer <token>` quand un token existe, et ne l'ajoute pas quand il n'y en a pas (test du comportement public vs protégé).
+  4. `auth.guard.spec.ts` — le guard redirige vers `/login` (via `router.createUrlTree`) quand il n'y a pas de token, et autorise la navigation (`true`) quand il y en a un.
+- **Vérifications réalisées :** `npx ng test` → **4 fichiers de test, 8 tests, tous passés**, en ~1 seconde, sans backend ni MongoDB lancés (uniquement `HttpTestingController`, qui intercepte les requêtes avant qu'elles ne quittent le navigateur).
+- **Erreurs ou propositions rejetées :**
+  - Le testeur unifié d'Angular 22 (`@angular/build:unit-test`, basé sur Vitest) nécessitait un environnement DOM (`jsdom`, absent du starter) et une configuration `development` sur la cible `build` dans `angular.json` (absente aussi) : deux ajouts d'outillage nécessaires avant de pouvoir exécuter le moindre test.
+- **Fichiers effectivement modifiés/ajoutés :**
+  - `frontend-starter/src/app/shared/services/auth.service.spec.ts` (nouveau)
+  - `frontend-starter/src/app/shared/services/track.service.spec.ts` (nouveau)
+  - `frontend-starter/src/app/shared/interceptors/auth.interceptor.spec.ts` (nouveau)
+  - `frontend-starter/src/app/shared/guards/auth.guard.spec.ts` (nouveau)
+  - `frontend-starter/angular.json` (configuration `development` sur `build`)
+  - `frontend-starter/package.json`, `frontend-starter/package-lock.json` (ajout `jsdom` en devDependency)
+- **Preuve de fonctionnement :**
+```
+Test Files  4 passed (4)
+     Tests  8 passed (8)
+  Duration  1.05s
+```
+- **Ce que je sais maintenant expliquer sans l'agent :**
+  - pourquoi ces tests n'ont besoin ni de backend ni de MongoDB : `provideHttpClientTesting()` remplace le vrai `HttpClient` par une version simulée — chaque requête est interceptée par `HttpTestingController` et c'est le test lui-même qui fournit la réponse (`req.flush(...)`), donc rien ne part réellement sur le réseau ;
+  - ce que vérifie concrètement un test de guard ou d'intercepteur : pas le rendu visuel, mais le **comportement** d'une fonction pure injectée dans un contexte Angular simulé (`TestBed.runInInjectionContext`) — on vérifie une valeur de retour (`true` ou une `UrlTree`) ou un effet de bord sur la requête HTTP (présence/absence d'un header) ;
+  - différence test unitaire / test d'intégration : ici tous les tests sont **unitaires** (un service, un intercepteur ou un guard isolé, dépendances simulées). Un test d'intégration irait plus loin en vérifiant plusieurs couches ensemble sans rien simuler au milieu (par ex. un vrai composant + un vrai service + un vrai backend de test), ce qui n'est pas demandé ici et sort du cadre de ce TP.
